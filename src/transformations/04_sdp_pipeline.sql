@@ -14,6 +14,7 @@
 -- MAGIC Raw ingestion as streaming tables — capture data as-is for auditability.
 
 -- COMMAND ----------
+--- updated comment for demo! 
 
 -- DBTITLE 1,Bronze: Flights
 CREATE OR REFRESH MATERIALIZED VIEW bronze_flights
