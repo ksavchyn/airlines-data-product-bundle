@@ -1,0 +1,31 @@
+resources:
+  pipelines:
+    airlines_data_product:
+      name: "[${bundle.target}] Airlines-Data-Product"
+
+      # Output catalog + schema for Bronze/Silver/Gold tables.
+      catalog: ${var.catalog}
+      schema: ${var.schema}
+
+      # Pipeline source. The SQL references ${catalog} (see configuration below)
+      # to resolve both the raw_airlines source AND the output catalog.
+      root_path: ../src
+      libraries:
+        - glob:
+            include: ../src/transformations/**
+
+      # Exposed to the SQL as ${catalog}. Source = target catalog per env.
+      configuration:
+        catalog: ${var.catalog}
+
+      serverless: true
+      photon: true
+      channel: CURRENT
+      continuous: false
+
+      # Note: `development` (true for dev, false for staging/prod) is set
+      # automatically by the bundle target mode — no need to hardcode it.
+
+      permissions:
+        - level: CAN_VIEW
+          group_name: "users"

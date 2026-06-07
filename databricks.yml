@@ -1,0 +1,62 @@
+bundle:
+  name: airlines-data-product
+
+include:
+  - resources/*.yml
+
+# Shared variables. Per-target overrides live in the `targets` block below.
+variables:
+  catalog:
+    description: "Catalog the pipeline reads raw_airlines from AND writes Bronze/Silver/Gold into."
+    default: "kat_savchyn"
+  schema:
+    description: "Output schema for the medallion tables."
+    default: "airlines_pipeline"
+
+targets:
+  # --- dev: development mode, kat_savchyn ---
+  dev:
+    default: true
+    mode: development
+    # Auth is supplied at runtime: `-p e2-demo` locally, or DATABRICKS_HOST +
+    # workload identity federation (OIDC) in CI. No profile pinned here.
+    variables:
+      catalog: "kat_savchyn"
+      schema: "airlines_pipeline"
+
+  # --- staging: production mode, staging_catalog ---
+  staging:
+    mode: production
+    workspace:
+      root_path: /Workspace/Users/kateryna.savchyn@databricks.com/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: "staging_catalog"
+      schema: "airlines_pipeline"
+
+  # --- prod: production mode, prod_catalog (+ scheduled daily refresh job) ---
+  prod:
+    mode: production
+    workspace:
+      root_path: /Workspace/Users/kateryna.savchyn@databricks.com/.bundle/${bundle.name}/${bundle.target}
+    variables:
+      catalog: "prod_catalog"
+      schema: "airlines_pipeline"
+    # The scheduled refresh job is defined ONLY in prod, so it never deploys
+    # to dev or staging.
+    resources:
+      jobs:
+        airlines_daily_refresh:
+          name: "[${bundle.target}] Airlines Data Product — Daily Refresh"
+          tasks:
+            - task_key: refresh_pipeline
+              pipeline_task:
+                pipeline_id: ${resources.pipelines.airlines_data_product.id}
+                full_refresh: false
+          schedule:
+            # 06:00 every day, US Eastern (DST-aware via timezone_id).
+            quartz_cron_expression: "0 0 6 * * ?"
+            timezone_id: "America/New_York"
+            pause_status: UNPAUSED
+          permissions:
+            - level: CAN_VIEW
+              group_name: "users"

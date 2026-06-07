@@ -1,0 +1,78 @@
+name: bundle-cicd
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+env:
+  # Auth: Databricks personal access token. The CLI picks up DATABRICKS_HOST +
+  # DATABRICKS_TOKEN automatically — no profile or extra config needed.
+  DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}      # repo variable (not a secret)
+  DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }} # repo secret (PAT)
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Runs on every push to main AND every PR: validate the bundle + run pytest.
+  # ---------------------------------------------------------------------------
+  validate-and-test:
+    name: Validate bundle & run tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - uses: databricks/setup-cli@main
+
+      - name: Validate bundle (all targets)
+        run: |
+          databricks bundle validate -t dev
+          databricks bundle validate -t staging
+          databricks bundle validate -t prod
+
+      - name: Run pytest
+        run: pytest
+
+  # ---------------------------------------------------------------------------
+  # On merge to main only: deploy to staging automatically.
+  # ---------------------------------------------------------------------------
+  deploy-staging:
+    name: Deploy to staging
+    needs: validate-and-test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # GitHub Environment — if staging uses a different token/host, override the
+    # DATABRICKS_TOKEN secret / DATABRICKS_HOST variable on this environment.
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - uses: databricks/setup-cli@main
+      - name: Deploy bundle to staging
+        run: databricks bundle deploy -t staging
+
+  # ---------------------------------------------------------------------------
+  # On merge to main only, AFTER staging: deploy to production behind a
+  # manual approval gate (configured via the `production` GitHub Environment's
+  # required-reviewers protection rule — see README).
+  # ---------------------------------------------------------------------------
+  deploy-prod:
+    name: Deploy to production
+    needs: deploy-staging
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: databricks/setup-cli@main
+      - name: Deploy bundle to production
+        run: databricks bundle deploy -t prod
